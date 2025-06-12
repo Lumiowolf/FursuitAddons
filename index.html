@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Color Picker PWA</title>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="manifest.json" />
+</head>
+
+<body>
+    <div id="app">
+        <canvas id="palette" width="300" height="300"></canvas>
+        <div id="mode-toggle">
+            <button id="switch-mode">Zmień tryb: Kolorowy</button>
+        </div>
+        <div id="indicator"></div>
+
+        <div class="rgb-inputs">
+            <label>R: <input type="number" id="r" min="0" max="255" /></label>
+            <label>G: <input type="number" id="g" min="0" max="255" /></label>
+            <label>B: <input type="number" id="b" min="0" max="255" /></label>
+        </div>
+
+        <div id="color-display"></div>
+        <button onclick="connectToBLE()">Połącz z ESP32 przez BLE</button>
+    </div>
+    <script src="app.js"></script>
+</body>
+
+</html>
