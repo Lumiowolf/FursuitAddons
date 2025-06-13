@@ -11,6 +11,9 @@
 
 <body>
     <div id="app">
+        <label for="brightness">Jasność</label>
+        <input type="range" id="brightness" min="0" max="255" value="255">
+
         <canvas id="palette" width="300" height="300"></canvas>
         <div id="mode-toggle">
             <button id="switch-mode">Zmień tryb: Kolorowy</button>
@@ -25,6 +28,7 @@
 
         <div id="color-display"></div>
         <button onclick="connectToBLE()">Połącz z ESP32 przez BLE</button>
+        <button onclick="disconnectBLE()">Rozłącz ESP</button>
     </div>
     <script src="app.js"></script>
 </body>

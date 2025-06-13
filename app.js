@@ -11,6 +11,17 @@ const inputs = {
 let mode = 'color'; // 'color' lub 'white'
 let bleDevice = null;
 let bleCharacteristic = null;
+let disconnectChar = null;
+
+let brightnessChar = null;
+
+function debounce(fn, delay) {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn(...args), delay);
+    };
+}
 
 // --------------------------------
 // RYSOWANIE PALETY
@@ -142,19 +153,47 @@ function updateColor(x, y) {
     const cy = y - rect.top;
 
     const radius = canvas.width / 2;
-    const dx = cx - radius;
-    const dy = cy - radius;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    let dx = cx - radius;
+    let dy = cy - radius;
+    let distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (distance > radius) return;
+    let drawX = cx;
+    let drawY = cy;
 
-    const pixel = ctx.getImageData(cx, cy, 1, 1).data;
+    // jeśli poza kołem – ustaw wskaźnik na krawędzi
+    if (distance > radius) {
+        const angle = Math.atan2(dy, dx);
+        drawX = radius + Math.cos(angle) * radius;
+        drawY = radius + Math.sin(angle) * radius;
+    }
+
+    let pixel = ctx.getImageData(drawX, drawY, 1, 1).data;
+
+    // jeśli przezroczysty – szukamy najbliższego koloru w stronę środka
+    if (pixel[3] === 0) {
+        const steps = 500; // dokładność
+        for (let i = 1; i <= steps; i++) {
+            const factor = 1 - i / steps;
+            const tx = radius + dx * factor;
+            const ty = radius + dy * factor;
+            const tempPixel = ctx.getImageData(tx, ty, 1, 1).data;
+            if (tempPixel[3] !== 0) {
+                drawX = tx;
+                drawY = ty;
+                pixel = tempPixel;
+                break;
+            }
+        }
+    }
+
     const [r, g, b] = pixel;
 
-    indicator.style.left = `${x - 6}px`;
-    indicator.style.top = `${y - 6}px`;
+    // przesunięcie wskaźnika
+    indicator.style.left = `${drawX + rect.left - 6}px`;
+    indicator.style.top = `${drawY + rect.top - 6}px`;
     indicator.style.display = 'block';
 
+    // aktualizacja koloru
     colorDisplay.style.backgroundColor = `rgb(${r},${g},${b})`;
     inputs.r.value = r;
     inputs.g.value = g;
@@ -197,25 +236,97 @@ Object.values(inputs).forEach((input) => {
 });
 
 // --------------------------------
+// BRIGHTNESS CONTROL
+// --------------------------------
+async function sendBrightnessToESP(level) {
+    if (!brightnessChar) return;
+    try {
+        await brightnessChar.writeValue(new Uint8Array([level]));
+    } catch (e) {
+        console.error('Błąd wysyłania jasności:', e);
+    }
+}
+
+const brightnessInput = document.getElementById('brightness');
+
+const sendBrightnessDebounced = debounce((value) => {
+    sendBrightnessToESP(value);
+}, 50); // wyślij po 100ms bez zmiany
+
+brightnessInput.addEventListener('input', (e) => {
+    const value = parseInt(e.target.value, 10);
+    sendBrightnessDebounced(value);
+});
+
+// --------------------------------
 // BLE POŁĄCZENIE I WYSYŁANIE
 // --------------------------------
+const bleDisconnectedHandler = () => {
+    console.warn("BLE: Połączenie zakończone.");
+    alert("Połączenie z ESP zostało zakończone.");
+    bleDevice = null;
+    bleCharacteristic = null;
+    disconnectChar = null;
+};
+
 async function connectToBLE() {
+    if (bleDevice && bleDevice.gatt.connected) {
+        console.log("Zamykam poprzednie połączenie...");
+        bleDevice.gatt.disconnect();
+    }
+
+    if (bleDevice) {
+        // Usuń stary listener z poprzedniego urządzenia
+        bleDevice.removeEventListener('gattserverdisconnected', bleDisconnectedHandler);
+        bleDevice = null;
+        bleCharacteristic = null;
+        disconnectChar = null;
+    }
+
     if (!navigator.bluetooth) {
         alert("Twoja przeglądarka nie obsługuje Web Bluetooth.\nUżyj Chrome przez HTTPS lub localhost.");
         return;
     }
 
     try {
-        bleDevice = await navigator.bluetooth.requestDevice({
+        const device = await navigator.bluetooth.requestDevice({
             filters: [{ namePrefix: 'NeoPixel' }],
             optionalServices: ['12345678-1234-1234-1234-123456789abc']
         });
+
+        bleDevice = device;
+        bleDevice.addEventListener('gattserverdisconnected', bleDisconnectedHandler);
+
         const server = await bleDevice.gatt.connect();
         const service = await server.getPrimaryService('12345678-1234-1234-1234-123456789abc');
-        bleCharacteristic = await service.getCharacteristic('0000abcd-0000-1000-8000-00805f9b34fb'); alert('Połączono z ESP32');
+        bleCharacteristic = await service.getCharacteristic('0000abcd-0000-1000-8000-00805f9b34fb');
+        disconnectChar = await service.getCharacteristic('0000dcba-0000-1000-8000-00805f9b34fb');
+        brightnessChar = await service.getCharacteristic('0000bbaa-0000-1000-8000-00805f9b34fb');
+
+        alert('Połączono z ESP32');
     } catch (e) {
         console.error('Błąd BLE:', e);
     }
+}
+
+async function disconnectBLE() {
+    if (disconnectChar) {
+        try {
+            await disconnectChar.writeValue(new Uint8Array([1]));
+            console.log("Poproszono ESP o rozłączenie");
+        } catch (e) {
+            console.error("Błąd przy wysyłaniu rozkazu rozłączenia:", e);
+        }
+    } else {
+        console.warn("Brak charakterystyki rozłączenia — rozłączam siłowo");
+        if (bleDevice && bleDevice.gatt.connected) {
+            bleDevice.gatt.disconnect();
+        }
+    }
+
+    bleDevice = null;
+    bleCharacteristic = null;
+    disconnectChar = null;
 }
 
 let bleBusy = false;
@@ -254,9 +365,9 @@ drawPalette();
 setupInteraction();
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/service-worker.js').then(() => {
-    console.log('Service Worker zarejestrowany');
-  }).catch((err) => {
-    console.error('Błąd Service Workera:', err);
-  });
+    navigator.serviceWorker.register('/service-worker.js').then(() => {
+        console.log('Service Worker zarejestrowany');
+    }).catch((err) => {
+        console.error('Błąd Service Workera:', err);
+    });
 }
