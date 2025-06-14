@@ -5,8 +5,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Color Picker PWA</title>
-    <link rel="stylesheet" href="style.css" />
-    <link rel="manifest" href="manifest.json" />
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="icon" href="data:,">
 </head>
 
 <body>
@@ -30,7 +31,20 @@
         <button onclick="connectToBLE()">Połącz z ESP32 przez BLE</button>
         <button onclick="disconnectBLE()">Rozłącz ESP</button>
     </div>
-    <script src="app.js"></script>
+    <script src="./app.js"></script>
+
+    <script>
+        // Rejestracja poprawnego Service Workera (działa również na GitHub Pages)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./service-worker.js') // ✔️ ścieżka względna
+                .then(() => {
+                    console.log('Service Worker zarejestrowany');
+                })
+                .catch((err) => {
+                    console.error('Błąd Service Workera:', err);
+                });
+        }
+    </script>
 </body>
 
 </html>
